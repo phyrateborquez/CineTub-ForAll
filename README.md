@@ -1,4 +1,4 @@
-# ReproductorPro
+# CineTub-ForAll
 
 Convierte tu página web en una sala de video compartida. Prepara una lista de videos de YouTube, controla la emisión desde el panel de administración y permite que tu comunidad vea el mismo contenido al mismo tiempo.
 
