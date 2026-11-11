@@ -183,6 +183,8 @@ class PlaylistModule {
     this.editSave = document.getElementById('edit-save');
     this.modalClose = document.getElementById('modal-close');
     this.modalBackdrop = this.editModal.querySelector('.modal-backdrop');
+    this.durationDetector = new VideoDurationDetector(this.urlInput, this.durationMinutes, this.durationSeconds);
+    this.editDurationDetector = new VideoDurationDetector(this.editUrl, this.editDurationMinutes, this.editDurationSeconds);
 
     // State
     this.playlist = [];
@@ -231,12 +233,6 @@ class PlaylistModule {
 
 
 
-  _extractDuration(url, type) {
-    // Could auto-fetch duration from API in the future
-    // For now, user enters it manually
-    return null;
-  }
-
   /* --- Add Video --- */
   async _handleAdd(e) {
     e.preventDefault();
@@ -271,6 +267,7 @@ class PlaylistModule {
       });
 
       // Reset form
+      this.durationDetector.reset();
       this.addForm.reset();
       this._showFeedback('Video agregado correctamente', 'success');
       setTimeout(() => this._clearFeedback(), 3000);
@@ -379,6 +376,7 @@ class PlaylistModule {
   _openEditModal(id) {
     const video = this.playlist.find((v) => v.id === id);
     if (!video) return;
+    this.editDurationDetector.reset();
 
     this.editId.value = video.id;
     this.editTitle.value = video.title;
@@ -392,6 +390,7 @@ class PlaylistModule {
   }
 
   _closeEditModal() {
+    this.editDurationDetector.reset();
     this.editModal.classList.add('hidden');
     this.editForm.reset();
   }
@@ -710,6 +709,8 @@ class AdminApp {
   }
 
   _onLogout() {
+    this.playlist.durationDetector.reset();
+    this.playlist.editDurationDetector.reset();
     this.playback.destroy();
     this.clientCountText.textContent = '0';
   }
@@ -723,3 +724,4 @@ document.addEventListener('DOMContentLoaded', () => {
   // window.__adminApp eliminado (MED-02): exponer la instancia
   // globalmente permite a scripts maliciosos interactuar con la app.
 });
+

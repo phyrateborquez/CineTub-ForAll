@@ -520,6 +520,24 @@
   }
 }
 
+.video-preview {
+  width: 100%;
+  margin-top: 1rem;
+}
+
+.video-preview p {
+  margin-bottom: 0.75rem;
+  font-size: 0.875rem;
+}
+
+.video-preview iframe {
+  display: block;
+  width: 100%;
+  max-width: 480px;
+  min-height: 200px;
+  border: 0;
+}
+
 @media (max-width: 480px) {
   .login-card {
     margin: 1rem;
@@ -535,3 +553,4 @@
     display: none;
   }
 }
+
