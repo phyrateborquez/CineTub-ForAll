@@ -43,6 +43,10 @@ class PlaylistManager {
     });
   }
 
+  removeVideos(ids) {
+    return this.syncEngine.removeVideos(ids);
+  }
+
   reorderVideo(id, newOrderIndex) {
     return this._mutate(async () => {
       if (!await playlistRepo.getById(id)) throw new Error('Video not found');

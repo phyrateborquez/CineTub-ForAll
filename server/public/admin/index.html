@@ -126,13 +126,25 @@
             <h2 class="card-title">Playlist</h2>
             <span id="playlist-count" class="playlist-count">0 videos</span>
           </div>
+          <div class="playlist-selection">
+            <label class="select-all-label">
+              <input type="checkbox" id="select-all-videos">
+              Seleccionar todos
+            </label>
+            <span id="selection-count" role="status" aria-live="polite">0 seleccionados</span>
+            <button type="button" id="delete-selected-btn" class="btn btn-secondary btn-sm" disabled>
+              Eliminar seleccionados
+            </button>
+          </div>
           <div id="playlist-empty" class="playlist-empty">
             <p>No hay videos en la playlist</p>
             <p class="text-muted">Agrega un video para comenzar</p>
           </div>
+          <p id="playlist-feedback" role="status" aria-live="polite"></p>
           <table id="playlist-table" class="playlist-table hidden">
             <thead>
               <tr>
+                <th class="col-select"><span class="sr-only">Seleccionar</span></th>
                 <th class="col-order">#</th>
                 <th class="col-drag"></th>
                 <th class="col-title">Título</th>
@@ -221,4 +233,3 @@
   <script src="/admin/admin.js"></script>
 </body>
 </html>
-

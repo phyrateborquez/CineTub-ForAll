@@ -215,6 +215,7 @@ test('admin API can add, play and delete the sole video', async () => {
   }
   try {
     assert.equal((await request('/api/playlist')).status, 401);
+    assert.equal((await request('/api/playlist/delete-selected', 'POST', { ids: [1] })).status, 401);
     assert.equal((await request('/api/auth/login', 'POST', { password: process.env.ADMIN_PASSWORD })).status, 200);
     const response = await request('/api/playlist', 'POST', {
       title: 'Integration test', source_url: 'https://youtu.be/abcdefghijk', duration: 307,
@@ -226,6 +227,15 @@ test('admin API can add, play and delete the sole video', async () => {
     const state = await (await request('/api/playback')).json();
     assert.equal(state.video, null);
     assert.equal(state.isPlaying, false);
+    for (const ids of [[], [0], ['1'], [null], [-1]]) {
+      assert.equal((await request('/api/playlist/delete-selected', 'POST', { ids })).status, 400);
+    }
+    const videos = await addVideos(3);
+    const ids = videos.map(item => item.id);
+    const bulk = await request('/api/playlist/delete-selected', 'POST', { ids: [...ids, ids[0]] });
+    assert.equal(bulk.status, 200);
+    assert.equal((await bulk.json()).removedIds.length, 3);
+    assert.deepEqual(await playlistRepo.getAll(), []);
   } finally {
     server.closeAllConnections();
     await new Promise(resolve => server.close(resolve));
@@ -276,4 +286,97 @@ test('public player clears an empty channel and preserves paused advances', () =
   player._loadVideo = (video, position, isPlaying) => { playing = isPlaying; };
   player._handleVideoAdvance({ video: { id: 2 }, isPlaying: false });
   assert.equal(playing, false);
+});
+
+test('bulk deletion skips selected videos in a single playback transition', async () => {
+  const videos = await addVideos(4);
+  await engine.play();
+  const currentId = engine.state.currentVideo.id;
+  const other = videos.find(video => video.id !== currentId);
+  const removed = await manager.removeVideos([currentId, other.id]);
+  assert.deepEqual(new Set(removed), new Set([currentId, other.id]));
+  assert.ok(!removed.includes(engine.state.currentVideo.id));
+  assert.equal(engine.state.isPlaying, true);
+  assert.equal(events.filter(event => event.name === 'video:advance').length, 1);
+  assert.equal((await playlistRepo.getAll()).length, 2);
+  assert.equal((await playbackRepo.get()).current_video_id, engine.state.currentVideo.id);
+});
+
+test('bulk deletion preserves playback when the current video is unselected', async () => {
+  const videos = await addVideos(4);
+  await engine.play();
+  await engine.seekTo(23);
+  const currentId = engine.state.currentVideo.id;
+  const ids = videos.filter(video => video.id !== currentId).map(video => video.id);
+  await manager.removeVideos(ids);
+  assert.equal(engine.state.currentVideo.id, currentId);
+  assert.ok(engine.state.position >= 23);
+  assert.equal(engine.state.isPlaying, true);
+  assert.equal(events.filter(event => event.name === 'video:advance').length, 0);
+});
+
+test('selecting every video leaves the channel idle and retries are harmless', async () => {
+  const videos = await addVideos();
+  await engine.play();
+  const ids = videos.map(video => video.id);
+  await manager.removeVideos(ids);
+  assert.deepEqual(await playlistRepo.getAll(), []);
+  assert.equal(engine.state.currentVideo, null);
+  assert.equal(engine.state.isPlaying, false);
+  assert.deepEqual(await manager.removeVideos(ids), []);
+});
+
+test('bulk deletion rolls back every deletion and the playback state on failure', async () => {
+  const videos = await addVideos(3);
+  await engine.play();
+  const currentId = engine.state.currentVideo.id;
+  await db.run(`CREATE TRIGGER reject_bulk BEFORE DELETE ON playlist
+    WHEN OLD.id = ${videos[1].id} BEGIN SELECT RAISE(ABORT, 'test failure'); END`);
+  try {
+    await assert.rejects(manager.removeVideos(videos.map(video => video.id)));
+    assert.equal((await playlistRepo.getAll()).length, 3);
+    assert.equal(engine.state.currentVideo.id, currentId);
+    assert.equal((await playbackRepo.get()).current_video_id, currentId);
+    assert.equal(events.filter(event => event.name === 'video:advance').length, 0);
+  } finally {
+    await db.run('DROP TRIGGER reject_bulk');
+  }
+});
+
+test('selection survives refreshes and a failed deletion remains retryable', async () => {
+  const vm = require('node:vm');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const context = { document: { addEventListener() {} }, confirm: () => true, console };
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/admin/admin.js'), 'utf8') +
+    '\nthis.PlaylistModule = PlaylistModule;', context);
+  const module = Object.create(context.PlaylistModule.prototype);
+  module.deletingSelection = false;
+  module.playlist = [{ id: 1, title: 'One', duration: 10 }, { id: 2, title: 'Two', duration: 20 }];
+  module.selectedIds = new Set([1, 99]);
+  module._escapeHtml = value => value;
+  for (const name of ['selectAll', 'selectionCount', 'deleteSelectedBtn', 'playlistCount',
+    'playlistEmpty', 'playlistTable', 'playlistBody', 'playlistFeedback']) {
+    module[name] = { classList: { add() {}, remove() {} } };
+  }
+  module._renderPlaylist();
+  assert.deepEqual([...module.selectedIds], [1]);
+  assert.equal(module.selectAll.indeterminate, true);
+  assert.equal(module.deleteSelectedBtn.disabled, false);
+  module.api = { post: async () => { throw new Error('offline'); } };
+  await module._handleDeleteSelected();
+  assert.deepEqual([...module.selectedIds], [1]);
+  assert.match(module.playlistFeedback.textContent, /offline/);
+  assert.equal(module.deletingSelection, false);
+  module.selectedIds.add(2);
+  module._updateSelection();
+  assert.equal(module.selectAll.checked, true);
+  assert.equal(module.selectAll.indeterminate, false);
+  module.api = { post: async () => ({ removedIds: [1, 2] }) };
+  module.fetchPlaylist = async () => {};
+  await module._handleDeleteSelected();
+  assert.equal(module.playlist.length, 0);
+  assert.equal(module.selectedIds.size, 0);
+  assert.equal(module.deleteSelectedBtn.disabled, true);
 });

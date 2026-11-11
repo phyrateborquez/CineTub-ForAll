@@ -119,6 +119,20 @@ function createAdminRoutes(playlistManager, syncEngine) {
     }
   });
 
+  router.post('/api/playlist/delete-selected', requireAuth, async (req, res) => {
+    const ids = req.body?.ids;
+    if (!Array.isArray(ids) || !ids.length || ids.some(id => !Number.isSafeInteger(id) || id <= 0)) {
+      return res.status(400).json({ error: 'Selecciona al menos un video válido' });
+    }
+    try {
+      const removedIds = await playlistManager.removeVideos([...new Set(ids)]);
+      res.json({ removedIds });
+    } catch (error) {
+      console.error('[routes] Error al eliminar selección:', error.message);
+      res.status(500).json({ error: 'No se pudo eliminar la selección. Intenta nuevamente.' });
+    }
+  });
+
   // DELETE /api/playlist/:id
   router.delete('/api/playlist/:id', requireAuth, async (req, res) => {
     try {

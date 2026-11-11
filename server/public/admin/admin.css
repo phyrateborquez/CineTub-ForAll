@@ -229,6 +229,52 @@
   font-size: 0.85rem;
 }
 
+.playlist-selection {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+}
+
+.select-all-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.playlist-selection input,
+.col-select input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+.col-select {
+  width: 32px;
+}
+
+.playlist-table tr.is-selected {
+  background-color: var(--color-surface-hover);
+}
+
+#selection-count {
+  color: var(--color-text-muted);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .playlist-table th {
   text-align: left;
   font-weight: 600;
@@ -553,4 +599,3 @@
     display: none;
   }
 }
-

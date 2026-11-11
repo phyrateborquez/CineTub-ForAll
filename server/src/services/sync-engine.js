@@ -105,15 +105,16 @@ class SyncEngine {
     return candidates[Math.floor(Math.random() * candidates.length)] || null;
   }
 
-  async _advanceVideo(removeId = null) {
-    const playlist = (await playlistRepo.getAll()).filter(video => video.id !== removeId);
+  async _advanceVideo(removeIds = []) {
+    const removedIds = new Set(removeIds);
+    const playlist = (await playlistRepo.getAll()).filter(video => !removedIds.has(video.id));
     const playedIds = new Set([...this.playedIds].filter(id => playlist.some(video => video.id === id)));
     if (this.state.currentVideo) playedIds.add(this.state.currentVideo.id);
     const next = this._selectNext(playlist, playedIds);
     const isPlaying = Boolean(next && this.state.isPlaying);
     // Persist before publishing. Deletion and state replacement commit together.
-    if (removeId !== null) {
-      await playlistRepo.deleteWithPlayback(removeId, next?.id || null, 0, isPlaying);
+    if (removeIds.length) {
+      await playlistRepo.deleteManyWithPlayback(removeIds, next?.id || null, 0, isPlaying);
     } else {
       await playbackRepo.upsert(next?.id || null, 0, isPlaying);
     }
@@ -134,16 +135,30 @@ class SyncEngine {
   }
 
   removeVideo(id) {
+    return this.removeVideos([id], true);
+  }
+
+  removeVideos(ids, requireExisting = false) {
     return this.runExclusive(async () => {
-      if (!await playlistRepo.getById(id)) throw new Error('Video not found');
-      if (this.state.currentVideo?.id === id) {
-        await this._advanceVideo(id);
+      const playlist = await playlistRepo.getAll();
+      const selected = new Set(ids);
+      const removedIds = playlist.filter(video => selected.has(video.id)).map(video => video.id);
+      if (requireExisting && !removedIds.length) throw new Error('Video not found');
+      if (!removedIds.length) return [];
+      if (selected.has(this.state.currentVideo?.id)) {
+        await this._advanceVideo(removedIds);
       } else {
-        await playlistRepo.delete(id);
+        this._updatePosition();
+        await playlistRepo.deleteManyWithPlayback(removedIds, this.state.currentVideo?.id || null,
+          this.state.position, this.state.isPlaying);
+        this.state.playlist = playlist.filter(video => !selected.has(video.id));
       }
-      this.playedIds.delete(id);
-      this.failedIds.delete(id);
-      await this.updatePlaylist();
+      for (const id of removedIds) {
+        this.playedIds.delete(id);
+        this.failedIds.delete(id);
+      }
+      this.io.emit('playlist:update', { playlist: this.state.playlist });
+      return removedIds;
     });
   }
 

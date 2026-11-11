@@ -171,6 +171,12 @@ class PlaylistModule {
     this.playlistTable = document.getElementById('playlist-table');
     this.playlistBody = document.getElementById('playlist-body');
     this.playlistCount = document.getElementById('playlist-count');
+    this.selectAll = document.getElementById('select-all-videos');
+    this.selectionCount = document.getElementById('selection-count');
+    this.deleteSelectedBtn = document.getElementById('delete-selected-btn');
+    this.playlistFeedback = document.getElementById('playlist-feedback');
+    this.selectedIds = new Set();
+    this.deletingSelection = false;
 
     this.editModal = document.getElementById('edit-modal');
     this.editForm = document.getElementById('edit-form');
@@ -196,6 +202,20 @@ class PlaylistModule {
   _bindEvents() {
     // Add video form
     this.addForm.addEventListener('submit', (e) => this._handleAdd(e));
+    this.selectAll.addEventListener('change', () => {
+      this.selectedIds = new Set(this.selectAll.checked ? this.playlist.map(video => video.id) : []);
+      this._renderPlaylist();
+    });
+    this.playlistBody.addEventListener('change', (event) => {
+      const input = event.target.closest('[data-select-id]');
+      if (!input || this.deletingSelection) return;
+      const id = Number(input.dataset.selectId);
+      if (input.checked) this.selectedIds.add(id);
+      else this.selectedIds.delete(id);
+      input.closest('tr').classList.toggle('is-selected', input.checked);
+      this._updateSelection();
+    });
+    this.deleteSelectedBtn.addEventListener('click', () => this._handleDeleteSelected());
 
     // Edit modal
     this.editCancel.addEventListener('click', () => this._closeEditModal());
@@ -212,6 +232,7 @@ class PlaylistModule {
 
     // Delegated events for playlist table
     this.playlistBody.addEventListener('click', (e) => {
+      if (this.deletingSelection) return;
       const btn = e.target.closest('[data-action]');
       if (!btn) return;
 
@@ -303,6 +324,9 @@ class PlaylistModule {
 
   _renderPlaylist() {
     const count = this.playlist.length;
+    const availableIds = new Set(this.playlist.map(video => video.id));
+    this.selectedIds = new Set([...this.selectedIds].filter(id => availableIds.has(id)));
+    this._updateSelection();
     this.playlistCount.textContent = `${count} video${count !== 1 ? 's' : ''}`;
 
     if (count === 0) {
@@ -323,7 +347,12 @@ class PlaylistModule {
     const duration = this._formatDuration(video.duration);
 
     return `
-      <tr draggable="true" data-id="${video.id}" data-index="${index}">
+      <tr draggable="${!this.deletingSelection}" class="${this.selectedIds.has(video.id) ? 'is-selected' : ''}" data-id="${video.id}" data-index="${index}">
+        <td class="col-select">
+          <input type="checkbox" data-select-id="${video.id}"
+            aria-label="Seleccionar ${this._escapeHtml(video.title)}"
+            ${this.selectedIds.has(video.id) ? 'checked' : ''} ${this.deletingSelection ? 'disabled' : ''}>
+        </td>
         <td class="col-order">${index + 1}</td>
         <td class="col-drag">
           <span class="drag-handle" title="Arrastrar para reordenar">&#9776;</span>
@@ -354,10 +383,43 @@ class PlaylistModule {
   _escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str;
-    return div.innerHTML;
+    return div.innerHTML.replace(/"/g, '&quot;');
   }
 
   /* --- Delete Video --- */
+  _updateSelection() {
+    const count = this.selectedIds.size;
+    this.selectAll.checked = count > 0 && count === this.playlist.length;
+    this.selectAll.indeterminate = count > 0 && count < this.playlist.length;
+    this.selectAll.disabled = !this.playlist.length || this.deletingSelection;
+    this.selectionCount.textContent = `${count} seleccionado${count === 1 ? '' : 's'}`;
+    this.deleteSelectedBtn.disabled = count === 0 || this.deletingSelection;
+    this.deleteSelectedBtn.textContent = this.deletingSelection ? 'Eliminando…' : 'Eliminar seleccionados';
+  }
+
+  async _handleDeleteSelected() {
+    const ids = [...this.selectedIds];
+    if (!ids.length || this.deletingSelection) return;
+    if (!confirm(`¿Eliminar ${ids.length} video${ids.length === 1 ? '' : 's'} de la playlist?`)) return;
+    this.deletingSelection = true;
+    this.playlistFeedback.textContent = '';
+    this._renderPlaylist();
+    try {
+      const result = await this.api.post('/api/playlist/delete-selected', { ids });
+      this.selectedIds.clear();
+      const deletedIds = new Set(ids);
+      this.playlist = this.playlist.filter(video => !deletedIds.has(video.id));
+      const count = result.removedIds.length;
+      this.playlistFeedback.textContent = `${count} video${count === 1 ? '' : 's'} eliminado${count === 1 ? '' : 's'}.`;
+      await this.fetchPlaylist();
+    } catch (error) {
+      this.playlistFeedback.textContent = `No se pudo eliminar la selección: ${error.message}`;
+    } finally {
+      this.deletingSelection = false;
+      this._renderPlaylist();
+    }
+  }
+
   async _handleDelete(id) {
     const video = this.playlist.find((v) => v.id === id);
     if (!video) return;
@@ -426,6 +488,10 @@ class PlaylistModule {
 
   /* --- Drag & Drop --- */
   _onDragStart(e) {
+    if (this.deletingSelection || e.target.closest('input, button')) {
+      e.preventDefault();
+      return;
+    }
     const row = e.target.closest('tr');
     if (!row) return;
 
@@ -724,4 +790,3 @@ document.addEventListener('DOMContentLoaded', () => {
   // window.__adminApp eliminado (MED-02): exponer la instancia
   // globalmente permite a scripts maliciosos interactuar con la app.
 });
-

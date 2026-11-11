@@ -30,9 +30,9 @@ const queries = {
 
   delete: (id) => db.run('DELETE FROM playlist WHERE id = ?', [id]),
 
-  deleteWithPlayback: (id, nextId, position, isPlaying) => db.batch([
+  deleteManyWithPlayback: (ids, nextId, position, isPlaying) => db.batch([
     playbackRepo.statement(nextId, position, isPlaying),
-    { sql: 'DELETE FROM playlist WHERE id = ?', args: [id] },
+    ...ids.map(id => ({ sql: 'DELETE FROM playlist WHERE id = ?', args: [id] })),
   ]),
 
   reorder: (id, orderIndex) =>
