@@ -97,6 +97,7 @@ function createAdminRoutes(playlistManager, syncEngine) {
       res.status(204).send();
     } catch (err) {
       console.error('[routes] Error al reordenar:', err);
+      if (err.status === 409) return res.status(409).json({ error: err.message });
       res.status(500).json({ error: 'Error interno del servidor' });
     }
   });
@@ -177,7 +178,7 @@ function createAdminRoutes(playlistManager, syncEngine) {
   router.post('/api/playback/seek', requireAuth, async (req, res) => {
     try {
       const position = parseFloat(req.body.position);
-      if (isNaN(position) || position < 0) {
+      if (!Number.isFinite(position) || position < 0) {
         return res.status(400).json({ error: 'Posición válida requerida' });
       }
       await syncEngine.seekTo(position);

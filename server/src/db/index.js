@@ -1,6 +1,7 @@
 const { createClient } = require('@libsql/client');
 const fs = require('fs');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const config = require('../config');
 
 // Cliente de Turso (libSQL) — se inicializa una sola vez
@@ -25,7 +26,7 @@ async function initDatabase() {
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
     }
-    client = createClient({ url: `file:${config.dbPath}` });
+    client = createClient({ url: pathToFileURL(path.resolve(config.dbPath)).href });
     console.log('[db] Conectado a SQLite local:', config.dbPath);
   }
 
@@ -60,6 +61,15 @@ function getDb() {
  */
 async function run(sql, params = []) {
   return client.execute({ sql, args: params });
+}
+
+function batch(statements) {
+  return getDb().batch(statements, 'write');
+}
+
+function close() {
+  client?.close();
+  client = null;
 }
 
 /**
@@ -99,4 +109,6 @@ module.exports = {
   run,
   get,
   all,
+  batch,
+  close,
 };

@@ -1,4 +1,5 @@
 const db = require('../db');
+const playbackRepo = require('./playback-repo');
 
 const queries = {
   getAll: () => db.all('SELECT * FROM playlist ORDER BY order_index ASC'),
@@ -29,13 +30,20 @@ const queries = {
 
   delete: (id) => db.run('DELETE FROM playlist WHERE id = ?', [id]),
 
+  deleteWithPlayback: (id, nextId, position, isPlaying) => db.batch([
+    playbackRepo.statement(nextId, position, isPlaying),
+    { sql: 'DELETE FROM playlist WHERE id = ?', args: [id] },
+  ]),
+
   reorder: (id, orderIndex) =>
     db.run('UPDATE playlist SET order_index = ? WHERE id = ?', [orderIndex, id]),
 
   reorderBatch: async (items) => {
-    for (const item of items) {
-      await db.run('UPDATE playlist SET order_index = ? WHERE id = ?', [item.orderIndex, item.id]);
-    }
+    if (!items.length) return;
+    await db.batch(items.map(item => ({
+      sql: 'UPDATE playlist SET order_index = ? WHERE id = ?',
+      args: [item.orderIndex, item.id],
+    })));
   },
 
   getFirst: () => db.get('SELECT * FROM playlist ORDER BY order_index ASC LIMIT 1'),

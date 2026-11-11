@@ -345,7 +345,18 @@ class PlayerApp {
     const { video, position, isPlaying, playlist } = data;
 
     // If video changed, create new player
-    if (video && (!this.currentVideo || this.currentVideo.id !== video.id)) {
+    if (!video) {
+      this.currentPlayer?.destroy();
+      this.currentPlayer = null;
+      this.currentVideo = null;
+      this._clearTimeDisplay();
+      this.videoTitle.textContent = 'Esperando videos';
+      this.durationEl.textContent = '0:00';
+      this.currentTimeEl.textContent = '0:00';
+      this.errorOverlay.classList.add('hidden');
+      this.bufferingIndicator.classList.add('hidden');
+      this.startOverlay.classList.add('hidden');
+    } else if (!this.currentVideo || this.currentVideo.id !== video.id) {
       this._loadVideo(video, position, isPlaying);
     } else if (this.currentVideo) {
       // Sync position if drift is significant
@@ -363,7 +374,7 @@ class PlayerApp {
   /* --- Video Advance Handler --- */
   _handleVideoAdvance(data) {
     if (data.video) {
-      this._loadVideo(data.video, data.position || 0, true);
+      this._loadVideo(data.video, data.position || 0, data.isPlaying ?? this.isPlaying);
     }
   }
 
@@ -464,8 +475,10 @@ class PlayerApp {
       });
 
       this.currentPlayer.on('error', (code) => {
+        if (this.currentVideo !== video) return;
         console.error('Player error:', code);
         this._handleVideoError({ message: 'Error de reproducción' });
+        this.socket.emit('client:video-error', { videoId: video.id, code });
       });
     } catch (err) {
       console.error('Failed to create player:', err);

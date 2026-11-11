@@ -58,17 +58,31 @@ async function start() {
   });
 
   // Graceful shutdown
-  process.on('SIGTERM', () => {
-    console.log('[server] SIGTERM received, shutting down...');
-    syncEngine.stop();
-    server.close(() => process.exit(0));
-  });
-
-  process.on('SIGINT', () => {
-    console.log('[server] SIGINT received, shutting down...');
-    syncEngine.stop();
-    server.close(() => process.exit(0));
-  });
+  let shuttingDown = false;
+  async function shutdown() {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log('[server] Saving state before shutdown...');
+    const timeout = setTimeout(() => {
+      console.error('[server] Shutdown timed out');
+      process.exit(1);
+    }, 20000);
+    timeout.unref();
+    const closed = new Promise(resolve => server.close(resolve));
+    io.close();
+    try {
+      await syncEngine.stop();
+      await closed;
+      db.close();
+      clearTimeout(timeout);
+      process.exit(0);
+    } catch (error) {
+      console.error('[server] Could not save final state:', error.message);
+      process.exit(1);
+    }
+  }
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 start().catch(err => {

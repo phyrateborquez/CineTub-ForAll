@@ -21,20 +21,30 @@ function createSocketHandlers(io, syncEngine) {
 
     // Handle client ready
     socket.on('client:ready', (data) => {
+      syncEngine.markClientReady(socket.id);
       console.log(`[socket] Client ready: ${socket.id}`);
       io.emit('client:count', { count: registry.getCount() });
     });
 
     // Handle client heartbeat
     socket.on('client:heartbeat', (data) => {
+      if (!data || !Number.isFinite(data.position) || data.position < 0) return;
       registry.updateHeartbeat(socket.id, data.position);
       syncEngine.handleHeartbeat(socket.id, data.position);
     });
 
     // Handle client reconnect
     socket.on('client:reconnect', (data) => {
+      if (!data || !Number.isFinite(data.lastKnownPosition)) return;
+      syncEngine.markClientReady(socket.id);
       console.log(`[socket] Client reconnected: ${socket.id}, last known position: ${data.lastKnownPosition}`);
       syncEngine.handleHeartbeat(socket.id, data.lastKnownPosition);
+    });
+
+    socket.on('client:video-error', (data) => {
+      syncEngine.reportVideoError(socket.id, data).catch(error => {
+        console.error('[socket] Could not recover video:', error.message);
+      });
     });
 
     // Handle disconnect

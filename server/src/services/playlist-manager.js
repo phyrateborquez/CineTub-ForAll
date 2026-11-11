@@ -5,85 +5,78 @@ class PlaylistManager {
     this.syncEngine = syncEngine;
   }
 
-  async addVideo(title, sourceUrl, duration) {
-    const video = await playlistRepo.insert(title, sourceUrl, duration);
-    // Update sync engine playlist
-    if (this.syncEngine) {
-      await this.syncEngine.updatePlaylist();
-    }
-    return video;
+  _mutate(operation) {
+    return this.syncEngine ? this.syncEngine.runExclusive(operation) : operation();
   }
 
-  async updateVideo(id, updates) {
-    const existing = await playlistRepo.getById(id);
-    if (!existing) {
-      throw new Error('Video not found');
-    }
-    const video = await playlistRepo.update(
-      id,
-      updates.title || existing.title,
-      updates.source_url || existing.source_url,
-      updates.duration || existing.duration
-    );
-    if (this.syncEngine) {
-      await this.syncEngine.updatePlaylist();
-    }
-    return video;
+  addVideo(title, sourceUrl, duration) {
+    return this._mutate(async () => {
+      const video = await playlistRepo.insert(title, sourceUrl, duration);
+      if (this.syncEngine) await this.syncEngine.updatePlaylist();
+      return video;
+    });
   }
 
-  async removeVideo(id) {
-    const existing = await playlistRepo.getById(id);
-    if (!existing) {
-      throw new Error('Video not found');
-    }
-
-    // Si el video a borrar es el que se está reproduciendo, pasamos al siguiente primero
-    // Esto evita un error de restricción de llave foránea (Foreign Key) en Turso
-    if (this.syncEngine && this.syncEngine.state.currentVideo && this.syncEngine.state.currentVideo.id === id) {
-      await this.syncEngine._advanceVideo();
-      // Pequeña pausa para asegurar que el estado se liberó
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-
-    await playlistRepo.delete(id);
-    if (this.syncEngine) {
-      await this.syncEngine.updatePlaylist();
-    }
+  updateVideo(id, updates) {
+    return this._mutate(async () => {
+      const existing = await playlistRepo.getById(id);
+      if (!existing) throw new Error('Video not found');
+      const video = await playlistRepo.update(
+        id,
+        updates.title || existing.title,
+        updates.source_url || existing.source_url,
+        updates.duration || existing.duration
+      );
+      if (this.syncEngine) {
+        this.syncEngine.failedIds.delete(id);
+        await this.syncEngine.updatePlaylist();
+      }
+      return video;
+    });
   }
 
-  async reorderVideo(id, newOrderIndex) {
-    const existing = await playlistRepo.getById(id);
-    if (!existing) {
-      throw new Error('Video not found');
-    }
-    await playlistRepo.reorder(id, newOrderIndex);
-    if (this.syncEngine) {
-      await this.syncEngine.updatePlaylist();
-    }
+  removeVideo(id) {
+    if (this.syncEngine) return this.syncEngine.removeVideo(id);
+    return this._mutate(async () => {
+      if (!await playlistRepo.getById(id)) throw new Error('Video not found');
+      await playlistRepo.delete(id);
+    });
   }
 
-  async reorderPlaylist(orderArray) {
-    // orderArray = [{id, orderIndex}, ...]
-    const items = orderArray.map((item, index) => ({
-      id: item.id,
-      orderIndex: item.orderIndex ?? index,
-    }));
-    await playlistRepo.reorderBatch(items);
-    if (this.syncEngine) {
-      await this.syncEngine.updatePlaylist();
-    }
+  reorderVideo(id, newOrderIndex) {
+    return this._mutate(async () => {
+      if (!await playlistRepo.getById(id)) throw new Error('Video not found');
+      await playlistRepo.reorder(id, newOrderIndex);
+      if (this.syncEngine) await this.syncEngine.updatePlaylist();
+    });
   }
 
-  async getPlaylist() {
-    return await playlistRepo.getAll();
+  reorderPlaylist(orderArray) {
+    return this._mutate(async () => {
+      const playlist = await playlistRepo.getAll();
+      const ids = new Set(playlist.map(video => video.id));
+      const submittedIds = new Set(orderArray.map(item => item?.id));
+      if (orderArray.length !== ids.size || submittedIds.size !== ids.size ||
+          orderArray.some(item => !item || !ids.has(item.id))) {
+        const error = new Error('La lista cambió. Recarga y vuelve a ordenar.');
+        error.status = 409;
+        throw error;
+      }
+      await playlistRepo.reorderBatch(orderArray.map((item, index) => ({ id: item.id, orderIndex: index })));
+      if (this.syncEngine) await this.syncEngine.updatePlaylist();
+    });
   }
 
-  async getNextVideo(currentOrderIndex) {
-    return await playlistRepo.getNext(currentOrderIndex);
+  getPlaylist() {
+    return playlistRepo.getAll();
   }
 
-  async getFirstVideo() {
-    return await playlistRepo.getFirst();
+  getNextVideo(currentOrderIndex) {
+    return playlistRepo.getNext(currentOrderIndex);
+  }
+
+  getFirstVideo() {
+    return playlistRepo.getFirst();
   }
 }
 

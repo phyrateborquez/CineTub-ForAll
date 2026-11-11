@@ -6,7 +6,7 @@ Puedes alojar el software en tu propio servidor e insertar el reproductor en tu 
 
 ## Una programación para toda tu comunidad
 
-El administrador agrega videos con su título, enlace y duración. Desde el panel puede iniciar o pausar la emisión, saltar al siguiente video y cambiar la posición de reproducción.
+El administrador agrega videos con su título y enlace. El panel obtiene la duración mediante una vista previa de YouTube y permite ajustarla manualmente. Desde el panel puede iniciar o pausar la emisión, saltar al siguiente video y cambiar la posición de reproducción.
 
 Cada espectador se incorpora al video que está en curso. El servidor mantiene el reloj de la emisión y corrige los desfases entre los reproductores. El volumen y el silencio se controlan de forma individual.
 
@@ -28,7 +28,7 @@ Descarga el código y abre una terminal en la carpeta `server`. Utiliza un entor
 Instala las dependencias.
 
 ```bash
-npm install
+npm ci
 ```
 
 Crea `.env` dentro de `server` con la siguiente configuración.
@@ -119,3 +119,7 @@ El navegador puede pedir una interacción inicial para permitir la reproducción
 | `server/src/db/migrations/` | Esquema de la base de datos. |
 
 Para adaptar la instalación, consulta la [configuración del servidor](server/src/config/index.js) y las [políticas de acceso e integración](server/src/app.js).
+
+## Comprobar la instalación
+
+Desde `server`, ejecuta `npm test`. Las pruebas utilizan una base temporal y comprueban los saltos simultáneos, el borrado, la recuperación de errores y el guardado al reiniciar.
